@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Human Genome Sequence Visualizer</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <header>
+        <h1>Human Genome Sequence Visualizer</h1>
+        <p class="subtitle">GRCh38/hg38 Reference Genome</p>
+    </header>
+
+    <main>
+        <section class="search-panel">
+            <div class="search-container">
+                <input type="text" id="gene-search" placeholder="Search gene symbol or name (e.g. TP53, BRCA1, Huntingtin)..." autocomplete="off">
+                <button id="search-btn">Search</button>
+                <button id="clear-btn" class="secondary-btn" style="display:none;">Clear</button>
+            </div>
+            <div id="search-suggestions" class="suggestions-dropdown"></div>
+            <div id="search-status" class="search-status"></div>
+        </section>
+
+        <section class="content-area">
+            <div class="karyotype-panel">
+                <h2>Human Karyotype</h2>
+                <div id="karyotype-container"></div>
+            </div>
+
+            <div class="detail-panel" id="detail-panel">
+                <div class="detail-placeholder" id="detail-placeholder">
+                    <div class="placeholder-icon">&#x1F9EC;</div>
+                    <p>Select a gene to view its chromosomal location</p>
+                    <p class="hint">Search above or click a gene marker on the chromosomes</p>
+                </div>
+                <div class="detail-content" id="detail-content" style="display:none;">
+                    <h2 id="detail-gene-symbol"></h2>
+                    <h3 id="detail-gene-name"></h3>
+                    <div class="detail-chromosome-view">
+                        <div id="detail-chromosome-svg"></div>
+                    </div>
+                    <table class="detail-table">
+                        <tr><th>Chromosome</th><td id="detail-chr"></td></tr>
+                        <tr><th>Cytogenetic Band</th><td id="detail-band"></td></tr>
+                        <tr><th>Start Position</th><td id="detail-start"></td></tr>
+                        <tr><th>End Position</th><td id="detail-end"></td></tr>
+                        <tr><th>Gene Size</th><td id="detail-size"></td></tr>
+                    </table>
+                    <div class="detail-description" id="detail-description"></div>
+                    <div class="detail-links">
+                        <a id="link-ncbi" href="#" target="_blank" rel="noopener">NCBI Gene</a>
+                        <a id="link-ensembl" href="#" target="_blank" rel="noopener">Ensembl</a>
+                        <a id="link-ucsc" href="#" target="_blank" rel="noopener">UCSC Browser</a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="gene-list-panel">
+            <h2>Gene Catalog</h2>
+            <div class="gene-filter">
+                <select id="chr-filter">
+                    <option value="">All Chromosomes</option>
+                </select>
+                <select id="category-filter">
+                    <option value="">All Categories</option>
+                    <option value="oncogene">Oncogenes</option>
+                    <option value="tumor_suppressor">Tumor Suppressors</option>
+                    <option value="disease">Disease Genes</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+            <div id="gene-table-container">
+                <table id="gene-table">
+                    <thead>
+                        <tr>
+                            <th data-sort="symbol">Symbol</th>
+                            <th data-sort="name">Name</th>
+                            <th data-sort="chr">Chr</th>
+                            <th data-sort="band">Band</th>
+                        </tr>
+                    </thead>
+                    <tbody id="gene-table-body"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>Data based on GRCh38/hg38 Human Reference Genome Assembly | Coordinates from NCBI Gene &amp; Ensembl</p>
+    </footer>
+
+    <script src="js/chromosomes.js"></script>
+    <script src="js/genes.js"></script>
+    <script src="js/visualization.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
