@@ -1,6 +1,6 @@
 /**
  * Main application controller.
- * Handles search, selection, filtering, and UI interactions.
+ * Handles search (local + MyGene.info API), selection, filtering, and UI.
  */
 
 (function () {
@@ -24,6 +24,13 @@
     let sortColumn = "symbol";
     let sortAsc = true;
 
+    // Debounce timer for API search
+    let searchDebounceTimer = null;
+    const DEBOUNCE_MS = 300;
+
+    // Track in-flight API search to avoid stale results
+    let searchGeneration = 0;
+
     // ===== Initialization =====
 
     function init() {
@@ -31,7 +38,7 @@
         populateFilters();
         renderGeneTable();
         bindEvents();
-        searchStatus.textContent = `${GENES.length} genes available \u2022 type to search`;
+        searchStatus.textContent = `${GENES.length} curated genes + all human coding genes via API`;
     }
 
     function populateFilters() {
@@ -82,12 +89,82 @@
         const query = searchInput.value.trim();
         if (query.length === 0) {
             hideSuggestions();
-            searchStatus.textContent = `${GENES.length} genes available \u2022 type to search`;
+            clearDebounce();
+            searchStatus.textContent = `${GENES.length} curated genes + all human coding genes via API`;
             return;
         }
-        const results = searchGenes(query);
-        showSuggestions(results);
+
+        // Show local results immediately
+        const localResults = searchGenesLocal(query);
+        if (localResults.length > 0) {
+            showSuggestions(localResults, false);
+        }
+
+        // Debounce API search
+        clearDebounce();
+        if (query.length >= 2) {
+            searchDebounceTimer = setTimeout(() => {
+                fetchAPISuggestions(query, localResults);
+            }, DEBOUNCE_MS);
+        }
+
         activeSuggestionIdx = -1;
+    }
+
+    function clearDebounce() {
+        if (searchDebounceTimer) {
+            clearTimeout(searchDebounceTimer);
+            searchDebounceTimer = null;
+        }
+    }
+
+    async function fetchAPISuggestions(query, existingLocal) {
+        const gen = ++searchGeneration;
+
+        // Show loading indicator in suggestions
+        setSearchLoading(true);
+
+        try {
+            const apiResults = await GeneAPI.search(query, 12);
+
+            // Abort if a newer search is in flight
+            if (gen !== searchGeneration) return;
+
+            // Merge: local results first (deduped), then API results
+            const merged = mergeResults(existingLocal, apiResults);
+            showSuggestions(merged, true);
+        } catch (err) {
+            // Silently fall back to local-only results
+            if (gen === searchGeneration) {
+                showSuggestions(existingLocal, true);
+            }
+        } finally {
+            if (gen === searchGeneration) {
+                setSearchLoading(false);
+            }
+        }
+    }
+
+    /**
+     * Merge local curated results with API results, deduplicating by symbol.
+     */
+    function mergeResults(local, api) {
+        const seen = new Set(local.map(g => g.symbol.toUpperCase()));
+        const merged = [...local];
+
+        for (const gene of api) {
+            if (!seen.has(gene.symbol.toUpperCase())) {
+                seen.add(gene.symbol.toUpperCase());
+                merged.push(gene);
+            }
+        }
+
+        return merged.slice(0, 15);
+    }
+
+    function setSearchLoading(isLoading) {
+        searchBtn.textContent = isLoading ? "..." : "Search";
+        searchBtn.disabled = isLoading;
     }
 
     function onSearchKeydown(e) {
@@ -126,7 +203,10 @@
         }
     }
 
-    function searchGenes(query) {
+    /**
+     * Search local curated genes only (instant, no network).
+     */
+    function searchGenesLocal(query) {
         const q = query.toLowerCase();
         const scored = GENES.map(gene => {
             let score = 0;
@@ -137,61 +217,113 @@
             if (sym === q) score = 100;
             else if (sym.startsWith(q)) score = 80;
             else if (sym.includes(q)) score = 60;
-            else if (name.toLowerCase().startsWith(q)) score = 50;
+            else if (name.startsWith(q)) score = 50;
             else if (name.includes(q)) score = 40;
             else if (gene.band.toLowerCase().includes(q)) score = 30;
             else if (desc.includes(q)) score = 20;
-            else score = 0;
 
             return { gene, score };
         })
         .filter(r => r.score > 0)
         .sort((a, b) => b.score - a.score)
-        .slice(0, 10);
+        .slice(0, 8);
 
         return scored.map(r => r.gene);
     }
 
-    function onSearchSubmit() {
+    /**
+     * Submit search: try local exact match -> API exact fetch -> API search.
+     */
+    async function onSearchSubmit() {
         const query = searchInput.value.trim();
         if (!query) return;
 
-        // Try exact symbol match first
-        const exact = GENE_BY_SYMBOL[query.toUpperCase()];
-        if (exact) {
-            selectGene(exact);
-            hideSuggestions();
+        clearDebounce();
+        hideSuggestions();
+
+        // 1. Try local exact match
+        const localExact = GENE_BY_SYMBOL[query.toUpperCase()];
+        if (localExact) {
+            selectGene(localExact);
             return;
         }
 
-        // Try first search result
-        const results = searchGenes(query);
-        if (results.length > 0) {
-            selectGene(results[0]);
-            hideSuggestions();
-        } else {
-            searchStatus.textContent = `No genes found for "${query}"`;
+        // 2. Try local search
+        const localResults = searchGenesLocal(query);
+        if (localResults.length > 0 && localResults[0].symbol.toUpperCase() === query.toUpperCase()) {
+            selectGene(localResults[0]);
+            return;
+        }
+
+        // 3. Query API
+        setSearchLoading(true);
+        searchStatus.textContent = `Searching for "${query}"...`;
+        searchStatus.style.color = "";
+
+        try {
+            // Try exact symbol fetch first
+            let gene = await GeneAPI.fetchBySymbol(query);
+
+            if (gene) {
+                selectGene(gene);
+                return;
+            }
+
+            // Try broader search
+            const apiResults = await GeneAPI.search(query, 5);
+            if (apiResults.length > 0) {
+                selectGene(apiResults[0]);
+                return;
+            }
+
+            // Nothing found anywhere
+            searchStatus.textContent = `No gene found for "${query}" - try a different symbol or name`;
             searchStatus.style.color = "#f59e0b";
-            setTimeout(() => { searchStatus.style.color = ""; }, 3000);
+            setTimeout(() => { searchStatus.style.color = ""; }, 4000);
+        } catch (err) {
+            searchStatus.textContent = `Search failed - check connection and try again`;
+            searchStatus.style.color = "#ef4444";
+            setTimeout(() => { searchStatus.style.color = ""; }, 4000);
+        } finally {
+            setSearchLoading(false);
         }
     }
 
     function onClear() {
         searchInput.value = "";
         selectedGene = null;
+        clearDebounce();
         hideSuggestions();
         clearBtn.style.display = "none";
         detailPlaceholder.style.display = "";
         detailContent.style.display = "none";
         drawKaryotype(karyotypeContainer);
-        searchStatus.textContent = `${GENES.length} genes available \u2022 type to search`;
+        searchStatus.textContent = `${GENES.length} curated genes + all human coding genes via API`;
         highlightTableRow(null);
     }
 
     // ===== Suggestions =====
 
-    function showSuggestions(genes) {
+    /**
+     * Show suggestion dropdown items.
+     * @param {Array} genes - gene objects to display
+     * @param {boolean} apiDone - whether API search has completed
+     */
+    function showSuggestions(genes, apiDone) {
         suggestionsEl.innerHTML = "";
+        if (genes.length === 0 && apiDone) {
+            // Show "no results" message
+            const noResult = document.createElement("div");
+            noResult.className = "suggestion-item";
+            noResult.style.color = "var(--text-muted)";
+            noResult.style.justifyContent = "center";
+            noResult.style.cursor = "default";
+            noResult.textContent = "No genes found - try pressing Enter for full search";
+            suggestionsEl.appendChild(noResult);
+            suggestionsEl.classList.add("active");
+            return;
+        }
+
         if (genes.length === 0) {
             hideSuggestions();
             return;
@@ -200,10 +332,15 @@
         genes.forEach(gene => {
             const item = document.createElement("div");
             item.className = "suggestion-item";
+
+            const isApi = gene.source === "api";
+            const sourceTag = isApi ? '<span class="suggestion-source">API</span>' : '';
+
             item.innerHTML = `
-                <span class="suggestion-symbol">${gene.symbol}</span>
-                <span class="suggestion-name">${gene.name}</span>
-                <span class="suggestion-chr">chr${gene.chr}</span>
+                <span class="suggestion-symbol">${escapeHtml(gene.symbol)}</span>
+                <span class="suggestion-name">${escapeHtml(gene.name)}</span>
+                ${sourceTag}
+                <span class="suggestion-chr">chr${escapeHtml(gene.chr)}</span>
             `;
             item.addEventListener("click", () => {
                 selectGene(gene);
@@ -212,6 +349,14 @@
             suggestionsEl.appendChild(item);
         });
 
+        // If API is still loading, show a footer
+        if (!apiDone) {
+            const loading = document.createElement("div");
+            loading.className = "suggestion-loading";
+            loading.textContent = "Searching all genes...";
+            suggestionsEl.appendChild(loading);
+        }
+
         suggestionsEl.classList.add("active");
     }
 
@@ -219,6 +364,12 @@
         suggestionsEl.classList.remove("active");
         suggestionsEl.innerHTML = "";
         activeSuggestionIdx = -1;
+    }
+
+    function escapeHtml(str) {
+        const div = document.createElement("div");
+        div.textContent = str;
+        return div.innerHTML;
     }
 
     // ===== Gene Selection =====
@@ -235,9 +386,11 @@
         showGeneDetail(gene);
 
         // Update status
-        searchStatus.textContent = `${gene.symbol} \u2022 Chromosome ${gene.chr} \u2022 ${gene.band}`;
+        const sourceLabel = gene.source === "api" ? " (via API)" : "";
+        searchStatus.textContent = `${gene.symbol} \u2022 Chromosome ${gene.chr} \u2022 ${gene.band}${sourceLabel}`;
+        searchStatus.style.color = "";
 
-        // Highlight in table
+        // Highlight in table (only works for curated genes)
         highlightTableRow(gene.symbol);
 
         // Scroll to highlighted chromosome
@@ -255,21 +408,65 @@
         document.getElementById("detail-gene-name").textContent = gene.name;
         document.getElementById("detail-chr").textContent = `Chromosome ${gene.chr}`;
         document.getElementById("detail-band").textContent = gene.band;
-        document.getElementById("detail-start").textContent = gene.start.toLocaleString() + " bp";
-        document.getElementById("detail-end").textContent = gene.end.toLocaleString() + " bp";
-        document.getElementById("detail-size").textContent = formatSize(gene.end - gene.start);
+
+        if (gene.start && gene.end) {
+            document.getElementById("detail-start").textContent = gene.start.toLocaleString() + " bp";
+            document.getElementById("detail-end").textContent = gene.end.toLocaleString() + " bp";
+            document.getElementById("detail-size").textContent = formatSize(gene.end - gene.start);
+        } else {
+            document.getElementById("detail-start").textContent = "N/A";
+            document.getElementById("detail-end").textContent = "N/A";
+            document.getElementById("detail-size").textContent = "N/A";
+        }
+
         document.getElementById("detail-description").textContent = gene.description;
 
+        // Gene type badge
+        const typeEl = document.getElementById("detail-gene-type");
+        if (typeEl) {
+            typeEl.textContent = gene.geneType || gene.category || "";
+            typeEl.style.display = (gene.geneType || gene.category) ? "" : "none";
+        }
+
+        // Entrez ID
+        const entrezEl = document.getElementById("detail-entrez-id");
+        if (entrezEl) {
+            entrezEl.textContent = gene.entrezId ? `Entrez: ${gene.entrezId}` : "";
+        }
+
+        // Ensembl ID
+        const ensemblIdEl = document.getElementById("detail-ensembl-id");
+        if (ensemblIdEl) {
+            ensemblIdEl.textContent = gene.ensemblId ? `Ensembl: ${gene.ensemblId}` : "";
+        }
+
         // Draw detail chromosome
-        drawDetailChromosome(document.getElementById("detail-chromosome-svg"), gene);
+        if (gene.start && gene.end) {
+            drawDetailChromosome(document.getElementById("detail-chromosome-svg"), gene);
+        }
 
         // External links
-        document.getElementById("link-ncbi").href =
-            `https://www.ncbi.nlm.nih.gov/gene/?term=${encodeURIComponent(gene.symbol)}[sym]+AND+human[orgn]`;
-        document.getElementById("link-ensembl").href =
-            `https://www.ensembl.org/Homo_sapiens/Search/Results?q=${encodeURIComponent(gene.symbol)};site=ensembl`;
-        document.getElementById("link-ucsc").href =
-            `https://genome.ucsc.edu/cgi-bin/hgTracks?db=hg38&position=chr${gene.chr}:${gene.start}-${gene.end}`;
+        const ncbiLink = document.getElementById("link-ncbi");
+        const ensemblLink = document.getElementById("link-ensembl");
+        const ucscLink = document.getElementById("link-ucsc");
+
+        if (gene.entrezId) {
+            ncbiLink.href = `https://www.ncbi.nlm.nih.gov/gene/${gene.entrezId}`;
+        } else {
+            ncbiLink.href = `https://www.ncbi.nlm.nih.gov/gene/?term=${encodeURIComponent(gene.symbol)}[sym]+AND+human[orgn]`;
+        }
+
+        if (gene.ensemblId) {
+            ensemblLink.href = `https://www.ensembl.org/Homo_sapiens/Gene/Summary?g=${encodeURIComponent(gene.ensemblId)}`;
+        } else {
+            ensemblLink.href = `https://www.ensembl.org/Homo_sapiens/Search/Results?q=${encodeURIComponent(gene.symbol)};site=ensembl`;
+        }
+
+        if (gene.start && gene.end) {
+            ucscLink.href = `https://genome.ucsc.edu/cgi-bin/hgTracks?db=hg38&position=chr${gene.chr}:${gene.start}-${gene.end}`;
+        } else {
+            ucscLink.href = `https://genome.ucsc.edu/cgi-bin/hgTracks?db=hg38&position=chr${gene.chr}`;
+        }
     }
 
     function formatSize(bp) {
@@ -288,7 +485,6 @@
         const genesOnChr = GENES_BY_CHR[chrId];
 
         if (genesOnChr && genesOnChr.length > 0) {
-            // If clicking the same chromosome that's already highlighted, cycle genes
             if (selectedGene && selectedGene.chr === chrId) {
                 const currentIdx = genesOnChr.findIndex(g => g.symbol === selectedGene.symbol);
                 const nextIdx = (currentIdx + 1) % genesOnChr.length;
@@ -311,12 +507,10 @@
             return true;
         });
 
-        // Sort
         filtered.sort((a, b) => {
             let va = a[sortColumn] || "";
             let vb = b[sortColumn] || "";
 
-            // Special chromosome sort order
             if (sortColumn === "chr") {
                 va = CHR_ORDER.indexOf(va);
                 vb = CHR_ORDER.indexOf(vb);
@@ -342,10 +536,10 @@
             }
 
             tr.innerHTML = `
-                <td class="gene-symbol-cell">${gene.symbol}</td>
-                <td>${gene.name}</td>
-                <td class="gene-chr-cell">${gene.chr}</td>
-                <td class="gene-band-cell">${gene.band}</td>
+                <td class="gene-symbol-cell">${escapeHtml(gene.symbol)}</td>
+                <td>${escapeHtml(gene.name)}</td>
+                <td class="gene-chr-cell">${escapeHtml(gene.chr)}</td>
+                <td class="gene-band-cell">${escapeHtml(gene.band)}</td>
             `;
 
             tr.addEventListener("click", () => selectGene(gene));
@@ -357,7 +551,6 @@
         geneTableBody.querySelectorAll("tr").forEach(tr => {
             tr.classList.toggle("selected", tr.dataset.symbol === symbol);
         });
-        // Scroll selected row into view
         const selected = geneTableBody.querySelector("tr.selected");
         if (selected) {
             selected.scrollIntoView({ behavior: "smooth", block: "nearest" });

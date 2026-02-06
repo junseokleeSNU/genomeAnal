@@ -203,6 +203,44 @@ main {
     min-height: 1.4em;
 }
 
+.suggestion-source {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--success);
+    background: rgba(16, 185, 129, 0.12);
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    margin-left: 0.4rem;
+    letter-spacing: 0.03em;
+    flex-shrink: 0;
+}
+
+.suggestion-loading {
+    padding: 0.5rem 1rem;
+    text-align: center;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    border-top: 1px solid var(--border);
+}
+
+.suggestion-loading::before {
+    content: '';
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-right: 0.5rem;
+    vertical-align: middle;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
 /* ===== Content Area ===== */
 .content-area {
     display: grid;
@@ -306,17 +344,55 @@ main {
     margin-top: 0.5rem;
 }
 
+.detail-header-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
 .detail-content h2 {
     font-family: var(--font-mono);
     font-size: 1.5rem;
     color: var(--accent);
 }
 
+.gene-type-badge {
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    background: rgba(59, 130, 246, 0.12);
+    color: var(--accent);
+    white-space: nowrap;
+}
+
 .detail-content h3 {
     font-size: 0.9rem;
     color: var(--text-secondary);
     font-weight: 400;
+    margin-bottom: 0.5rem;
+}
+
+.detail-ids {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
     margin-bottom: 1rem;
+}
+
+.detail-id-tag {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    background: var(--bg-secondary);
+    padding: 0.1rem 0.5rem;
+    border-radius: 4px;
+}
+
+.detail-id-tag:empty {
+    display: none;
 }
 
 .detail-chromosome-view {

@@ -15,7 +15,7 @@
     <main>
         <section class="search-panel">
             <div class="search-container">
-                <input type="text" id="gene-search" placeholder="Search gene symbol or name (e.g. TP53, BRCA1, Huntingtin)..." autocomplete="off">
+                <input type="text" id="gene-search" placeholder="Search any human gene (e.g. TP53, BRCA1, GAPDH, SOX2, MYH7)..." autocomplete="off">
                 <button id="search-btn">Search</button>
                 <button id="clear-btn" class="secondary-btn" style="display:none;">Clear</button>
             </div>
@@ -32,12 +32,19 @@
             <div class="detail-panel" id="detail-panel">
                 <div class="detail-placeholder" id="detail-placeholder">
                     <div class="placeholder-icon">&#x1F9EC;</div>
-                    <p>Select a gene to view its chromosomal location</p>
-                    <p class="hint">Search above or click a gene marker on the chromosomes</p>
+                    <p>Search any human gene to view its chromosomal location</p>
+                    <p class="hint">Type any gene symbol (e.g. GAPDH, SOX2) or browse the catalog below</p>
                 </div>
                 <div class="detail-content" id="detail-content" style="display:none;">
-                    <h2 id="detail-gene-symbol"></h2>
+                    <div class="detail-header-row">
+                        <h2 id="detail-gene-symbol"></h2>
+                        <span class="gene-type-badge" id="detail-gene-type"></span>
+                    </div>
                     <h3 id="detail-gene-name"></h3>
+                    <div class="detail-ids">
+                        <span class="detail-id-tag" id="detail-entrez-id"></span>
+                        <span class="detail-id-tag" id="detail-ensembl-id"></span>
+                    </div>
                     <div class="detail-chromosome-view">
                         <div id="detail-chromosome-svg"></div>
                     </div>
@@ -89,11 +96,12 @@
     </main>
 
     <footer>
-        <p>Data based on GRCh38/hg38 Human Reference Genome Assembly | Coordinates from NCBI Gene &amp; Ensembl</p>
+        <p>GRCh38/hg38 Human Reference Genome | Gene data via <a href="https://mygene.info" target="_blank" rel="noopener" style="color:var(--accent)">MyGene.info</a> API + curated set | Coordinates from NCBI Gene &amp; Ensembl</p>
     </footer>
 
     <script src="js/chromosomes.js"></script>
     <script src="js/genes.js"></script>
+    <script src="js/gene-api.js"></script>
     <script src="js/visualization.js"></script>
     <script src="js/app.js"></script>
 </body>
